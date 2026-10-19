@@ -1,0 +1,115 @@
+name: Playwright Automated Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run nightly at 02:00 UTC (07:30 IST)
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target Environment'
+        required: true
+        default: 'stage'
+        type: choice
+        options:
+          - stage
+          - prod
+      test_tag:
+        description: 'Test Filter Tag'
+        required: true
+        default: '@smoke'
+        type: choice
+        options:
+          - '@smoke'
+          - '@regression'
+          - 'all'
+
+jobs:
+  test:
+    name: Run Playwright Tests
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Project Dependencies
+        run: npm ci
+
+      - name: Get Playwright Version
+        id: playwright-version
+        run: echo "version=$(npx playwright --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+
+      - name: Cache Playwright Browser Binaries
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright Browsers & OS Dependencies
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install OS Dependencies (when browsers are cached)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Inject Environment Secrets (Option B)
+        run: |
+          mkdir -p config
+          echo "${{ secrets.ENV_STAGE }}" > config/.env.stage
+
+      - name: Execute Playwright Suite
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.test_tag }}" = "all" ]; then
+              ENV=${{ inputs.environment }} npx playwright test --project=chromium
+            else
+              ENV=${{ inputs.environment }} npx playwright test --grep "${{ inputs.test_tag }}" --project=chromium
+            fi
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            ENV=stage npx playwright test --project=chromium
+          else
+            ENV=stage npx playwright test --grep "@smoke" --project=chromium
+          fi
+        env:
+          CI: true
+
+      - name: Upload Playwright HTML Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+
+      - name: Upload Test Results on Failure (Traces, Screenshots, Videos)
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-results-failures
+          path: test-results/
+          retention-days: 14
+
+      - name: Publish Test Summary
+        if: always()
+        run: |
+          echo "### 🧪 Playwright Test Run Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger Event:** \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch / Ref:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runner OS:** \`${{ runner.os }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ job.status == 'success' && '✅ All Tests Passed' || '❌ Test Failures Encountered' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📦 **Report Artifact:** Download the \`playwright-report\` artifact below to view the interactive HTML report." >> $GITHUB_STEP_SUMMARY
