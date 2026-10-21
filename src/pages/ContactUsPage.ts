@@ -20,14 +20,13 @@ export class ContactUsPage extends BasePage {
         super(page);
 
         // Header & Info cards
-        this.pageHeading = page.getByRole('heading', { name: 'Contact Us' })
-            .or(page.locator('h4:has-text("Contact Us")'));
+        this.pageHeading = page.getByRole('heading', { name: 'Contact Us' }).first();
 
-        this.addressCard = page.getByText('Our Address')
-            .or(page.locator('text=Blucygnus, Inc.'));
+        this.addressCard = page.getByText('Our Address').first()
+            .or(page.locator('text=Blucygnus, Inc.')).first();
 
-        this.phoneCard = page.getByText('+1 (302) 302-3454')
-            .or(page.locator('text=Phone'));
+        this.phoneCard = page.getByText('+1 (302) 302-3454').first()
+            .or(page.locator('text=Phone')).first();
 
         // Form inputs
         this.nameInput = page.getByPlaceholder('Enter your name')
@@ -107,8 +106,16 @@ export class ContactUsPage extends BasePage {
 
     // Actions
     async goToContactUsPage(): Promise<void> {
-        await this.page.goto('/contact-us', { waitUntil: 'domcontentloaded' });
-        await this.pageHeading.waitFor({ state: 'visible' });
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                await this.page.goto('/contact-us', { waitUntil: 'domcontentloaded', timeout: 15000 });
+                await this.pageHeading.waitFor({ state: 'visible', timeout: 10000 });
+                return;
+            } catch (error) {
+                if (attempt === 3) throw error;
+                await this.page.waitForTimeout(1000);
+            }
+        }
     }
 
     async enterName(name: string): Promise<void> {
@@ -139,7 +146,6 @@ export class ContactUsPage extends BasePage {
     }
 
     async clickSubmit(): Promise<void> {
-        await this.scrollCenter(this.submitButton);
         await this.submitButton.click();
     }
 }
