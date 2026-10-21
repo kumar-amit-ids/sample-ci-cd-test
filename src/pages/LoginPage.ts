@@ -88,8 +88,16 @@ export class LoginPage extends BasePage {
 
     // Actions
     async goToLoginPage(): Promise<void> {
-        await this.page.goto('/login', { waitUntil: 'domcontentloaded' });
-        await this.signInButton.waitFor({ state: 'visible' });
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                await this.page.goto('/login', { waitUntil: 'domcontentloaded', timeout: 15000 });
+                await this.signInButton.waitFor({ state: 'visible', timeout: 10000 });
+                return;
+            } catch (error) {
+                if (attempt === 3) throw error;
+                await this.page.waitForTimeout(1000);
+            }
+        }
     }
 
     async enterEmail(email: string): Promise<void> {
